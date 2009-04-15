@@ -116,8 +116,8 @@ module Geokit
       # Main method which calls the do_geocode template method which subclasses
       # are responsible for implementing.  Returns a populated GeoLoc or an
       # empty one with a failed success code.
-      def self.geocode(address)  
-        res = do_geocode(address)
+      def self.geocode(address, opts = {})  
+        res = do_geocode(address, opts)
         return res.success? ? res : GeoLoc.new
       end  
       
@@ -197,7 +197,7 @@ module Geokit
       private
 
       # Template method which does the geocode lookup.
-      def self.do_geocode(address)
+      def self.do_geocode(address, opts = {})
         raise ArgumentError('Geocoder.ca requires a GeoLoc argument') unless address.is_a?(GeoLoc)
         url = construct_request(address)
         res = self.call_geocoder_service(url)
@@ -239,7 +239,7 @@ module Geokit
     class UsGeocoder < Geocoder
 
       private
-      def self.do_geocode(address)
+      def self.do_geocode(address, opts = {})
         address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
         
         query = (address_str =~ /^\d{5}(?:-\d{4})?$/ ? "zip" : "address") + "=#{Geokit::Inflector::url_escape(address_str)}"
@@ -287,9 +287,15 @@ module Geokit
       private 
 
       # Template method which does the geocode lookup.
-      def self.do_geocode(address)
+      def self.do_geocode(address, search_opts = {})
         address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
-        url="http://api.local.yahoo.com/MapsService/V1/geocode?appid=#{Geokit::Geocoders::yahoo}&location=#{Geokit::Inflector::url_escape(address_str)}"
+        url = "http://api.local.yahoo.com/MapsService/V1/geocode"
+        params = {'appid' => Geokit::Geocoders::yahoo,
+                  'query' => address}.merge(search_opts)
+        params.delete_if {|k, v| v.nil? } 
+        params_str = params.map {|k,v| "#{k}=#{Geokit::Inflector::url_escape(v)}"}.join "&"
+        url += "?#{params_str}"
+
         res = self.call_geocoder_service(url)
         return GeoLoc.new if !res.is_a?(Net::HTTPSuccess)
         xml = res.body
@@ -331,7 +337,7 @@ module Geokit
       private 
       
       # Template method which does the geocode lookup.
-      def self.do_geocode(address)
+      def self.do_geocode(address, opts = {})
         address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
         # geonames need a space seperated search string
         address_str.gsub!(/,/, " ")
@@ -396,7 +402,7 @@ module Geokit
       end  
 
       # Template method which does the geocode lookup.
-      def self.do_geocode(address)
+      def self.do_geocode(address, opts = {})
         address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
         res = self.call_geocoder_service("http://maps.google.com/maps/geo?q=#{Geokit::Inflector::url_escape(address_str)}&output=xml&key=#{Geokit::Geocoders::google}&oe=utf-8")
         return GeoLoc.new if !res.is_a?(Net::HTTPSuccess)
@@ -471,7 +477,7 @@ module Geokit
     class GeoPluginGeocoder < Geocoder
       private
       
-      def self.do_geocode(ip)
+      def self.do_geocode(ip, opts = {})
         return GeoLoc.new unless /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})?$/.match(ip)
         response = self.call_geocoder_service("http://www.geoplugin.net/xml.gp?ip=#{ip}")
         return response.is_a?(Net::HTTPSuccess) ? parse_xml(response.body) : GeoLoc.new
@@ -504,7 +510,7 @@ module Geokit
       # Given an IP address, returns a GeoLoc instance which contains latitude,
       # longitude, city, and country code.  Sets the success attribute to false if the ip 
       # parameter does not match an ip address.  
-      def self.do_geocode(ip)
+      def self.do_geocode(ip, opts = {})
         return GeoLoc.new if '0.0.0.0' == ip
         return GeoLoc.new unless /^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})?$/.match(ip)
         url = "http://api.hostip.info/get_html.php?ip=#{ip}&position=true"
@@ -558,7 +564,7 @@ module Geokit
       # 
       # The failover approach is crucial for production-grade apps, but is rarely used.
       # 98% of your geocoding calls will be successful with the first call  
-      def self.do_geocode(address)
+      def self.do_geocode(address, opts = {})
         Geokit::Geocoders::provider_order.each do |provider|
           begin
             klass = Geokit::Geocoders.const_get "#{provider.to_s.capitalize}Geocoder"
